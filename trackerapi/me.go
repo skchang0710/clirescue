@@ -5,74 +5,43 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
-	u "os/user"
-
-	"github.com/skchang0710/clirescue/cmdutil"
-	"github.com/skchang0710/clirescue/user"
 )
 
-var (
-	URL          string     = "https://www.pivotaltracker.com/services/v5/me"
-	FileLocation string     = homeDir() + "/.tracker"
-	currentUser  *user.User = user.New()
-	Stdout       *os.File   = os.Stdout
-)
+const apiURL string = "https://www.pivotaltracker.com/services/v5/me"
 
-func Me() {
-	setCredentials()
-	parse(makeRequest())
-	ioutil.WriteFile(FileLocation, []byte(currentUser.APIToken), 0644)
-}
+var client http.Client
 
-func makeRequest() []byte {
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", URL, nil)
-	req.SetBasicAuth(currentUser.Username, currentUser.Password)
+// APIToken returns the authentication token corresponding to the given
+// username and password and an error if the operation fails.
+func APIToken(usr, password string) (string, error) {
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating request")
+	}
+	req.SetBasicAuth(usr, password)
+
 	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
 	if err != nil {
-		fmt.Print(err)
+		return "", err
 	}
-	fmt.Printf("\n****\nAPI response: \n%s\n", string(body))
-	return body
-}
-
-func parse(body []byte) {
-	var meResp = new(MeResponse)
-	err := json.Unmarshal(body, &meResp)
-	if err != nil {
-		fmt.Println("error:", err)
+	var meResp struct {
+		APIToken string `json:"api_token"`
+		Error    string `json:"error"`
 	}
 
-	currentUser.APIToken = meResp.APIToken
-}
-
-func setCredentials() {
-	fmt.Fprint(Stdout, "Username: ")
-	var username = cmdutil.ReadLine()
-	cmdutil.Silence()
-	fmt.Fprint(Stdout, "Password: ")
-
-	var password = cmdutil.ReadLine()
-	currentUser.Login(username, password)
-	cmdutil.Unsilence()
-}
-
-func homeDir() string {
-	usr, _ := u.Current()
-	return usr.HomeDir
-}
-
-type MeResponse struct {
-	APIToken string `json:"api_token"`
-	Username string `json:"username"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Initials string `json:"initials"`
-	Timezone struct {
-		Kind      string `json:"kind"`
-		Offset    string `json:"offset"`
-		OlsonName string `json:"olson_name"`
-	} `json:"time_zone"`
+	err = json.Unmarshal(body, &meResp)
+	if err != nil {
+		return "", fmt.Errorf("unmarshal responseL: %v", err)
+	}
+	// if there's API called failed, return the message as an error.
+	if meResp.Error != "" {
+		return "", fmt.Errorf(meResp.Error)
+	}
+	return meResp.APIToken, nil
 }
