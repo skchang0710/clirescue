@@ -20,6 +20,14 @@ func APIToken(usr, password string) (string, error) {
 	}
 	req.SetBasicAuth(usr, password)
 
+	// Loop over header names
+	for name, values := range req.Header {
+		// Loop over all values for the name.
+		for _, value := range values {
+			fmt.Println(name, value)
+		}
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
